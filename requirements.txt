@@ -4,3 +4,7 @@ pyarrow
 seaborn
 scikit-learn
 StepMix
+scipy
+joblib
+tqdm
+streamlit
