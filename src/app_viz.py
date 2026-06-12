@@ -15,13 +15,42 @@ Two functions:
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.colors import Normalize
+from scipy.spatial import ConvexHull
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
 from src.model_fit import do_AHC, do_StepMix, do_hdbscan, do_kmeans
 
 
-def pca_scatter(data, labels, title=None, pca=None):
+def _draw_cluster_shells(ax, reduced, labels, cmap, norm):
+    """Outline each cluster with its convex hull to make groups easier to read.
+
+    For every non-noise cluster with at least three non-collinear points, draw
+    the convex hull as a soft filled polygon coloured to match the cluster's
+    points. Clusters too small (or degenerate) to form a hull are skipped.
+    """
+    for k in np.unique(labels):
+        if k == -1:
+            continue
+        pts = reduced[labels == k]
+        if len(pts) < 3:
+            continue
+        try:
+            hull = ConvexHull(pts)
+        except Exception:
+            # Collinear / degenerate point set — no 2-D hull.
+            continue
+        verts = pts[hull.vertices]
+        color = cmap(norm(k))
+        ax.fill(
+            verts[:, 0], verts[:, 1],
+            facecolor=color, edgecolor=color,
+            alpha=0.12, linewidth=1.5, zorder=0,
+        )
+
+
+def pca_scatter(data, labels, title=None, pca=None, figsize=(8, 6)):
     """Scatter `data` in 2-D PCA space, coloured by `labels`.
 
     Parameters
@@ -51,12 +80,23 @@ def pca_scatter(data, labels, title=None, pca=None):
         reduced = pca.transform(data)
     explained = pca.explained_variance_ratio_ * 100
 
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=figsize)
 
     mask_noise = labels == -1
     mask_clusters = ~mask_noise
 
-    # Noise first, so cluster points sit on top.
+    # Shared colormap + normalisation so cluster points and their convex-hull
+    # shells get the exact same colour.
+    cmap = plt.get_cmap("tab10")
+    cluster_labels = labels[mask_clusters]
+    if cluster_labels.size:
+        norm = Normalize(vmin=cluster_labels.min(), vmax=cluster_labels.max())
+    else:
+        norm = Normalize(vmin=0, vmax=1)
+
+    # External shell first, then noise, then cluster points on top.
+    _draw_cluster_shells(ax, reduced, labels, cmap, norm)
+
     if np.any(mask_noise):
         ax.scatter(
             reduced[mask_noise, 0], reduced[mask_noise, 1],
@@ -65,7 +105,7 @@ def pca_scatter(data, labels, title=None, pca=None):
 
     scatter = ax.scatter(
         reduced[mask_clusters, 0], reduced[mask_clusters, 1],
-        c=labels[mask_clusters], cmap="tab10", s=20,
+        c=cluster_labels, cmap=cmap, norm=norm, s=20,
         edgecolors="k", linewidths=0.3,
     )
 

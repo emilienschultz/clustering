@@ -32,7 +32,7 @@ CACHE_DIR.mkdir(exist_ok=True)
 PIPE_CFG = dict(
     max_clust=10,
     gap_iters=50,
-    n_jobs=8,
+    n_jobs=15,
     msrt="categorical",
     standardize=True,
     run_hdbscan=True,
@@ -43,6 +43,7 @@ st.set_page_config(page_title="Clustering robustness", layout="wide")
 
 
 # --------------------------- caching ---------------------------
+
 
 def config_key(data_cfg: dict, pipe_cfg: dict) -> str:
     """Stable short hash of the full (data + pipeline) configuration."""
@@ -100,6 +101,7 @@ def list_cached():
 
 # --------------------------- solution selection ---------------------------
 
+
 def best_solutions(all_models):
     """Recover the raw best / second-best rows behind the comparison table.
 
@@ -108,6 +110,7 @@ def best_solutions(all_models):
     a deduplicated DataFrame of distance-based best (rank 0) and second-best
     (rank 1) solutions plus the best LCA, across all validity indices.
     """
+
     def ranked(sub, col, asc):
         return (
             sub.dropna(subset=[col])
@@ -124,23 +127,35 @@ def best_solutions(all_models):
         for rank, tag in [(0, "Best"), (1, "Second-best")]:
             if len(top) > rank:
                 r = top.iloc[rank]
-                rows.append({
-                    "tag": tag, "index": label, "model": r["model"],
-                    "params": r["params"], "n_clust": int(r["n_clust"]),
-                })
+                rows.append(
+                    {
+                        "tag": tag,
+                        "index": label,
+                        "model": r["model"],
+                        "params": r["params"],
+                        "n_clust": int(r["n_clust"]),
+                    }
+                )
         top_lca = ranked(lca, col, asc)
         if len(top_lca) > 0:
             r = top_lca.iloc[0]
-            rows.append({
-                "tag": "Best LCA", "index": label, "model": r["model"],
-                "params": r["params"], "n_clust": int(r["n_clust"]),
-            })
+            rows.append(
+                {
+                    "tag": "Best LCA",
+                    "index": label,
+                    "model": r["model"],
+                    "params": r["params"],
+                    "n_clust": int(r["n_clust"]),
+                }
+            )
 
     out = pd.DataFrame(rows)
     if out.empty:
         return out
     out["params_str"] = out["params"].astype(str)
-    return out.drop_duplicates(subset=["model", "params_str", "n_clust"]).reset_index(drop=True)
+    return out.drop_duplicates(subset=["model", "params_str", "n_clust"]).reset_index(
+        drop=True
+    )
 
 
 @st.cache_data(show_spinner=False)
@@ -148,7 +163,10 @@ def cached_refit(run_key, model, params_str, n_clust, _df):
     """Cache re-fits per (run, solution) so reselecting is instant."""
     params = ast.literal_eval(params_str)
     return refit_labels(
-        _df, model, params, n_clust,
+        _df,
+        model,
+        params,
+        n_clust,
         standardize=PIPE_CFG["standardize"],
         msrt=PIPE_CFG["msrt"],
         subtract_one=PIPE_CFG["subtract_one"],
@@ -170,13 +188,21 @@ with st.sidebar:
     n_samples = st.number_input("Samples", 50, 5000, defaults.n_samples, step=10)
     n_features = st.number_input("Features", 2, 100, defaults.n_features, step=1)
     n_classes = st.number_input("True classes", 2, 12, defaults.n_classes, step=1)
-    n_informative = st.number_input("Informative features", 1, 50, defaults.n_informative, step=1)
-    n_redundant = st.number_input("Redundant features", 0, 50, defaults.n_redundant, step=1)
-    n_clusters_per_class = st.number_input("Clusters per class", 1, 5, defaults.n_clusters_per_class, step=1)
+    n_informative = st.number_input(
+        "Informative features", 1, 50, defaults.n_informative, step=1
+    )
+    n_redundant = st.number_input(
+        "Redundant features", 0, 50, defaults.n_redundant, step=1
+    )
+    n_clusters_per_class = st.number_input(
+        "Clusters per class", 1, 5, defaults.n_clusters_per_class, step=1
+    )
     class_sep = st.slider("Class separation", 0.1, 10.0, defaults.class_sep, step=0.1)
     flip_y = st.slider("Label noise (flip_y)", 0.0, 0.5, defaults.flip_y, step=0.01)
     likert = st.checkbox("Bin to Likert {1..5}", value=defaults.likert)
-    random_state = st.number_input("Random seed", 0, 9999, defaults.random_state, step=1)
+    random_state = st.number_input(
+        "Random seed", 0, 9999, defaults.random_state, step=1
+    )
 
     run_clicked = st.button("▶ Run treatment", type="primary", use_container_width=True)
 
@@ -208,12 +234,16 @@ if run_clicked:
 
         def preview(df, y_true):
             with live:
-                st.caption("Generated cluster scenario (true classes) — treatment running…")
+                st.caption(
+                    "Generated cluster scenario (true classes) — treatment running…"
+                )
                 fig, _ = pca_scatter(df, y_true, title="Ground-truth classes")
                 st.pyplot(fig)
 
         with st.spinner("Running treatment (this can take a while)…"):
-            st.session_state["payload"] = run_or_load(data_cfg, PIPE_CFG, preview=preview)
+            st.session_state["payload"] = run_or_load(
+                data_cfg, PIPE_CFG, preview=preview
+            )
 
 # Sidebar: browse previously cached runs
 with st.sidebar:
@@ -254,7 +284,9 @@ result = payload["result"]
 all_models = result["all_models"]
 
 src_tag = "loaded from cache" if payload.get("from_cache") else "freshly computed"
-st.success(f"Run `{payload['key']}` — {src_tag}. Dataset: {df.shape[0]} × {df.shape[1]}.")
+st.success(
+    f"Run `{payload['key']}` — {src_tag}. Dataset: {df.shape[0]} × {df.shape[1]}."
+)
 
 tab_clusters, tab_table = st.tabs(["Clusters", "Best-solution comparison"])
 
@@ -262,8 +294,10 @@ with tab_clusters:
     left, right = st.columns(2)
     with left:
         st.subheader("True configuration")
-        fig_true, pca = pca_scatter(df, y_true, title="Ground-truth classes")
-        st.pyplot(fig_true)
+        fig_true, pca = pca_scatter(
+            df, y_true, title="Ground-truth classes", figsize=(5, 3.75)
+        )
+        st.pyplot(fig_true, use_container_width=False)
 
     with right:
         st.subheader("Best / second-best solution")
