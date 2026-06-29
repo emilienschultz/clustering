@@ -22,7 +22,7 @@ import streamlit as st
 from process_dataset import process_dataset
 from src.app_viz import pca_scatter, refit_labels
 from src.data_gen import SimConfig, generate_clusters
-from src.tooling import INDEX_SPEC, model_comparison_table
+from src.tooling import INDEX_SPEC, model_comparison_table, selected_pools
 
 CACHE_DIR = Path(__file__).parent / "cache"
 CACHE_DIR.mkdir(exist_ok=True)
@@ -102,28 +102,22 @@ def list_cached():
 # --------------------------- solution selection ---------------------------
 
 
-def best_solutions(all_models):
-    """Recover the raw best / second-best rows behind the comparison table.
+def best_solutions(all_models, candidate_models):
+    """Recover the best / second-best / best-LCA rows behind the comparison table.
 
-    Mirrors the ranking in `model_comparison_table` but keeps the underlying
-    (model, params, n_clust) so each solution can be re-fit and plotted. Returns
-    a deduplicated DataFrame of distance-based best (rank 0) and second-best
-    (rank 1) solutions plus the best LCA, across all validity indices.
+    Uses the same gap-statistic-based selection as `model_comparison_table` (via
+    the shared `selected_pools` helper) but keeps the underlying (model, params,
+    n_clust) so each solution can be re-fit and plotted. This guarantees the
+    "Solution to visualize" dropdown offers exactly the solutions shown in the
+    comparison panel. Returns a deduplicated DataFrame of distance-based best
+    (rank 0) and second-best (rank 1) solutions plus the best LCA, across all
+    validity indices.
     """
-
-    def ranked(sub, col, asc):
-        return (
-            sub.dropna(subset=[col])
-            .sort_values(col, ascending=asc)
-            .drop_duplicates(subset=["model", "n_clust"])
-        )
-
-    dist = all_models[all_models["model"] != "latent"]
-    lca = all_models[all_models["model"] == "latent"]
+    dist_by_index, lca_by_index = selected_pools(all_models, candidate_models)
 
     rows = []
-    for col, label, asc in INDEX_SPEC:
-        top = ranked(dist, col, asc)
+    for col, label, _ in INDEX_SPEC:
+        top = dist_by_index[col]
         for rank, tag in [(0, "Best"), (1, "Second-best")]:
             if len(top) > rank:
                 r = top.iloc[rank]
@@ -136,7 +130,7 @@ def best_solutions(all_models):
                         "n_clust": int(r["n_clust"]),
                     }
                 )
-        top_lca = ranked(lca, col, asc)
+        top_lca = lca_by_index[col]
         if len(top_lca) > 0:
             r = top_lca.iloc[0]
             rows.append(
@@ -301,7 +295,7 @@ with tab_clusters:
 
     with right:
         st.subheader("Best / second-best solution")
-        sols = best_solutions(all_models)
+        sols = best_solutions(all_models, result["candidate_models"])
         if sols.empty:
             st.caption("No gap-selectable solutions for this run.")
         else:
