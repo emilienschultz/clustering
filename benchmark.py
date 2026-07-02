@@ -77,9 +77,9 @@ BASE_DATA_CFG = dict(
 )
 
 # Sweep 1: separation degrades, no label noise.
-SEP_GRID = [5.0, 4.0, 3.0, 2.5, 2.0, 1.5, 1.0, 0.75, 0.5, 0.25, 0.0]
+SEP_GRID = [10, 7, 5.0, 4.0, 3.0, 2.5, 2.0, 1.5, 1.0, 0.75, 0.5, 0.25, 0.1]
 # Sweep 2: label noise grows at the baseline separation.
-NOISE_GRID = [0.0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5]
+NOISE_GRID = [0.0, 0.0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5]
 BASE_SEP = 5.0
 
 # Clusters smaller than this do not count as "identified".
@@ -149,7 +149,10 @@ def solution_labels(df, all_models, row, pipe_cfg):
     """
     if "pred_clust" not in all_models.columns:
         return refit_labels(
-            df, row["model"], row["params"], int(row["n_clust"]),
+            df,
+            row["model"],
+            row["params"],
+            int(row["n_clust"]),
             standardize=pipe_cfg["standardize"],
             msrt=pipe_cfg["msrt"],
             subtract_one=pipe_cfg["subtract_one"],
@@ -170,9 +173,7 @@ def summarize_run(df, y_true, result, pipe_cfg):
     counts and ARI describe exactly the partition behind each recorded score.
     """
     all_models = result["all_models"]
-    dist_by_index, lca_by_index = selected_pools(
-        all_models, result["candidate_models"]
-    )
+    dist_by_index, lca_by_index = selected_pools(all_models, result["candidate_models"])
 
     rows = []
     for col, label, _ in INDEX_SPEC:
