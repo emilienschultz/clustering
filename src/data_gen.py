@@ -30,8 +30,13 @@ class SimConfig:
                                         # counts (400, 150, 150, 130) -- both
                                         # normalised internally. Length must
                                         # equal n_classes.
-    flip_y: float = 0.01            # fraction of labels randomly flipped (Y noise)
+    flip_y: float = 0.01            # fraction of labels randomly flipped (Y noise
+                                    # only: features are unchanged, so clustering
+                                    # is unaffected — it only degrades y_true)
     class_sep: float = 5.0          # larger = easier problem
+    noise_prop: float = 0.0         # proportion of the n_samples replaced by
+                                    # uniform random points over the feature
+                                    # range (no true class: y_true = -1)
     random_state: int = 0
     likert: bool = True             # set True to bin to {1..5}
 
@@ -51,8 +56,15 @@ def generate_clusters(cfg):
         w = np.asarray(cfg.class_balance, dtype=float)
         weights = (w / w.sum()).tolist()
 
+    # Split the sample between clustered points and uniform background noise.
+    # Noise points are drawn over the clustered points' feature range and get
+    # y_true = -1 (they belong to no class), then everything is shuffled so
+    # the Likert binning and any preview see one homogeneous frame.
+    n_noise = int(round(cfg.n_samples * cfg.noise_prop))
+    n_clustered = cfg.n_samples - n_noise
+
     X, y_true = make_classification(
-        n_samples=cfg.n_samples,
+        n_samples=n_clustered,
         n_features=cfg.n_features,
         n_informative=cfg.n_informative,
         n_redundant=cfg.n_redundant,
@@ -64,6 +76,15 @@ def generate_clusters(cfg):
         class_sep=cfg.class_sep,
         random_state=cfg.random_state,
     )
+    if n_noise > 0:
+        rng = np.random.default_rng(cfg.random_state)
+        X_noise = rng.uniform(
+            X.min(axis=0), X.max(axis=0), size=(n_noise, cfg.n_features)
+        )
+        X = np.vstack([X, X_noise])
+        y_true = np.concatenate([y_true, np.full(n_noise, -1)])
+        perm = rng.permutation(cfg.n_samples)
+        X, y_true = X[perm], y_true[perm]
     if cfg.likert:
         col_min = X.min(axis=0)
         col_max = X.max(axis=0)

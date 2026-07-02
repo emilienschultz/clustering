@@ -2,9 +2,10 @@
 
 Reads `benchmark_results/summary.csv` (built by `benchmark.py`) and draws a
 2x2 grid of line charts — rows: best distance-based solution / best LCA;
-columns: the separation sweep (x reversed, easy -> no structure) and the noise
-sweep. One line per clustering validity index; y is the number of identified
-clusters **excluding singletons**; a reference line marks the true k = 4.
+columns: the separation sweep (x reversed, easy -> no structure) and the
+random-points sweep (growing proportion of uniform background points). One
+line per clustering validity index; y is the number of identified clusters
+**excluding singletons**; a reference line marks the true k = 4.
 
 With several seeds, lines show the mean across seeds and translucent dots the
 individual seed values.
@@ -42,7 +43,7 @@ Y_MAX = 20
 POOLS = [("distance", "Best distance-based solution"), ("LCA", "Best LCA solution")]
 SWEEPS = [
     ("separation", "class_sep", "Class separation (easy → no structure)", True),
-    ("noise", "flip_y", "Label noise (flip_y)", False),
+    ("random", "noise_prop", "Proportion of uniform random points", False),
 ]
 TRUE_K = 4
 
@@ -104,8 +105,8 @@ def main():
             draw_panel(ax, sub, xcol, reverse_x)
             if i == 0:
                 ax.set_title(
-                    "Separation sweep (no noise)" if sweep == "separation"
-                    else f"Noise sweep (class_sep = {sub['class_sep'].iloc[0] if len(sub) else '—'})",
+                    "Separation sweep (no contamination)" if sweep == "separation"
+                    else f"Random-points sweep (class_sep = {sub['class_sep'].iloc[0] if len(sub) else '—'})",
                     fontsize=10, color=INK,
                 )
             if i == len(POOLS) - 1:

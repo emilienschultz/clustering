@@ -192,7 +192,14 @@ with st.sidebar:
         "Clusters per class", 1, 5, defaults.n_clusters_per_class, step=1
     )
     class_sep = st.slider("Class separation", 0.1, 10.0, defaults.class_sep, step=0.1)
-    flip_y = st.slider("Label noise (flip_y)", 0.0, 0.5, defaults.flip_y, step=0.01)
+    # flip_y is not exposed: it only relabels points (features unchanged), so
+    # the clustering problem is identical — contamination is the real knob.
+    noise_prop = st.slider(
+        "Random points proportion",
+        0.0, 0.5, defaults.noise_prop, step=0.05,
+        help="Share of samples replaced by uniform background points "
+        "(no true class, shown as noise in the ground-truth plot).",
+    )
     likert = st.checkbox("Bin to Likert {1..5}", value=defaults.likert)
     random_state = st.number_input(
         "Random seed", 0, 9999, defaults.random_state, step=1
@@ -208,8 +215,9 @@ data_cfg = dict(
     n_classes=int(n_classes),
     n_clusters_per_class=int(n_clusters_per_class),
     class_balance=None,
-    flip_y=float(flip_y),
+    flip_y=0.0,
     class_sep=float(class_sep),
+    noise_prop=float(noise_prop),
     random_state=int(random_state),
     likert=bool(likert),
 )
@@ -247,7 +255,8 @@ with st.sidebar:
         labels = {
             f"{r['data_cfg']['n_classes']} cls · "
             f"{r['data_cfg']['n_samples']}×{r['data_cfg']['n_features']} · "
-            f"sep={r['data_cfg']['class_sep']} · [{r['key']}]": r["key"]
+            f"sep={r['data_cfg']['class_sep']} · "
+            f"rnd={r['data_cfg'].get('noise_prop', 0.0)} · [{r['key']}]": r["key"]
             for r in runs
         }
         pick = st.selectbox("Reload a run", ["—"] + list(labels.keys()))

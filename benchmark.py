@@ -3,9 +3,12 @@
 Two sweeps over synthetic scenarios (4 true classes, 23 features, all
 informative), reusing `process_dataset` for the full robustness pipeline:
 
-- **separation**: class_sep goes from 5.0 (easy) down to 0.0 (no structure),
-  with no label noise;
-- **noise**: flip_y goes from 0.0 to 0.5 at the baseline separation (5.0).
+- **separation**: class_sep degrades from easy to (almost) no structure, with
+  no contamination;
+- **random**: the proportion of points replaced by uniform background noise
+  (no true class, y_true = -1) grows from 0 to 0.5 at the baseline separation.
+  (An earlier flip_y sweep was dropped: make_classification's flip_y only
+  reassigns labels, the features are untouched, so clustering never sees it.)
 
 For each scenario and each clustering validity index, the best distance-based
 solution and the best LCA solution (same gap-statistic selection as the app,
@@ -29,7 +32,7 @@ Usage
 HPC (SLURM job array, one scenario per task — n tasks = `--list` count):
 
     #!/bin/bash
-    #SBATCH --array=0-18
+    #SBATCH --array=0-20
     #SBATCH --cpus-per-task=16
     #SBATCH --mem=8G
     export OMP_NUM_THREADS=1     # joblib workers own the parallelism
@@ -65,6 +68,8 @@ from src.tooling import INDEX_SPEC, selected_pools
 
 # Fixed data design requested for this benchmark: 4 true classes, 23 features,
 # all informative (no redundant columns), Likert-binned like the replic_830 app.
+# flip_y stays at 0 everywhere: it only relabels points, the features (and so
+# the clustering problem) are unchanged.
 BASE_DATA_CFG = dict(
     n_samples=830,
     n_features=23,
@@ -73,13 +78,14 @@ BASE_DATA_CFG = dict(
     n_classes=4,
     n_clusters_per_class=1,
     class_balance=None,
+    flip_y=0.0,
     likert=True,
 )
 
-# Sweep 1: separation degrades, no label noise.
+# Sweep 1: separation degrades, no contamination.
 SEP_GRID = [10, 7, 5.0, 4.0, 3.0, 2.5, 2.0, 1.5, 1.0, 0.75, 0.5, 0.25, 0.1]
-# Sweep 2: label noise grows at the baseline separation.
-NOISE_GRID = [0.0, 0.0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5]
+# Sweep 2: proportion of uniform random points grows at the baseline separation.
+RANDOM_GRID = [0.0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5]
 BASE_SEP = 5.0
 
 # Clusters smaller than this do not count as "identified".
@@ -92,11 +98,11 @@ def build_scenarios(seeds):
     for seed in seeds:
         for sep in SEP_GRID:
             scenarios.append(
-                dict(sweep="separation", class_sep=sep, flip_y=0.0, seed=seed)
+                dict(sweep="separation", class_sep=sep, noise_prop=0.0, seed=seed)
             )
-        for flip in NOISE_GRID:
+        for prop in RANDOM_GRID:
             scenarios.append(
-                dict(sweep="noise", class_sep=BASE_SEP, flip_y=flip, seed=seed)
+                dict(sweep="random", class_sep=BASE_SEP, noise_prop=prop, seed=seed)
             )
     return scenarios
 
@@ -105,7 +111,7 @@ def scenario_data_cfg(scn):
     return dict(
         BASE_DATA_CFG,
         class_sep=scn["class_sep"],
-        flip_y=scn["flip_y"],
+        noise_prop=scn["noise_prop"],
         random_state=scn["seed"],
     )
 
@@ -274,7 +280,7 @@ def build_summary(scenarios, pipe_cfg, out_dir):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--sweep", choices=["separation", "noise", "all"], default="all")
+    ap.add_argument("--sweep", choices=["separation", "random", "all"], default="all")
     ap.add_argument(
         "--task-id",
         type=int,
