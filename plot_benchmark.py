@@ -75,9 +75,12 @@ def draw_panel(ax, sub, xcol, reverse_x, series_col, series_map, m):
         if s.empty:
             continue
         mean = s.groupby(xcol)[m["col"]].mean().sort_index()
+        # Semi-transparent marks so exactly juxtaposed lines (several series
+        # flat at the same k) stay individually visible where they overlap.
         ax.plot(
             mean.index, mean.values.clip(lo, hi),
-            color=color, lw=2, solid_capstyle="round", solid_joinstyle="round",
+            color=color, lw=2, alpha=0.7,
+            solid_capstyle="round", solid_joinstyle="round",
             marker="o", ms=8, mec=SURFACE, mew=2, label=label,
         )
         if multi_seed:
@@ -153,12 +156,14 @@ def main():
             if j == 0:
                 ax.set_ylabel(f"{row_label}\n{m['label']}", fontsize=9, color=INK_2)
 
-    handles, labels = axes[0, 0].get_legend_handles_labels()
-    if not handles:  # first panel may be sparse; scan for a populated one
-        for ax in axes.flat:
-            handles, labels = ax.get_legend_handles_labels()
-            if handles:
-                break
+    # Proxy handles at full opacity (the plotted marks are semi-transparent).
+    series_map = INDEXES if args.view == "best" else MODELS
+    handles = [
+        plt.Line2D([], [], color=color, lw=2, marker="o", ms=8,
+                   mec=SURFACE, mew=2)
+        for _, color in series_map.values()
+    ]
+    labels = [label for label, _ in series_map.values()]
     if m["ref"] is not None:
         handles.append(plt.Line2D([], [], color=AXIS, lw=1))
         labels.append(m["ref_label"])
