@@ -81,16 +81,22 @@ def dunn_score(data, pred_clust, metric='cityblock'):
 # Clusters min an max sizes
 def clust_size(pred_clust):
     cluster_sizes = Counter(pred_clust)
+    if not cluster_sizes:  # all-noise HDBSCAN fit: no clusters left
+        return np.nan, np.nan
     min_size = min(cluster_sizes.values())
     max_size = max(cluster_sizes.values())
-    
+
     return min_size, max_size
 
 
 # Return all model parameters and CVI at once
 def get_metrics(model, params, n, data, pred_clust, **additional_metrics):
 
-    # Remove noise
+    # CVIs and cluster sizes describe the clustered points only: HDBSCAN's
+    # noise pool (-1) is excluded rather than scored as one extra cluster, so
+    # its scores are comparable with k-means / AHC / latent (which never
+    # produce -1 and are unaffected). An all-noise fit yields NaN everywhere,
+    # which the selection steps already tolerate.
     noise = pred_clust == -1
     denoised_data = data[~noise]
     denoised_pred_clust = pred_clust[~noise]
@@ -99,16 +105,16 @@ def get_metrics(model, params, n, data, pred_clust, **additional_metrics):
         'model': model,
         'params': params,
         'n_clust': n,
-        # Keep the scored partition itself: k-means and StepMix fits are
-        # unseeded, so a later re-fit may land on a different local optimum
-        # than the one these CVIs were computed on.
+        # Keep the scored partition itself (full labels, noise included):
+        # k-means and StepMix fits are unseeded, so a later re-fit may land on
+        # a different local optimum than the one these CVIs were computed on.
         'pred_clust': np.asarray(pred_clust),
-        'min_clust_size': clust_size(pred_clust)[0],
-        'max_clust_size': clust_size(pred_clust)[1],
-        'silhouette': float(sil_score(data, pred_clust)),
-        'calinski_harabasz': float(ch_score(data, pred_clust)),
-        'davies_bouldin': float(db_score(data, pred_clust)),
-        'dunn': float(dunn_score(data, pred_clust))
+        'min_clust_size': clust_size(denoised_pred_clust)[0],
+        'max_clust_size': clust_size(denoised_pred_clust)[1],
+        'silhouette': float(sil_score(denoised_data, denoised_pred_clust)),
+        'calinski_harabasz': float(ch_score(denoised_data, denoised_pred_clust)),
+        'davies_bouldin': float(db_score(denoised_data, denoised_pred_clust)),
+        'dunn': float(dunn_score(denoised_data, denoised_pred_clust))
     }
 
     base_metrics.update(additional_metrics)

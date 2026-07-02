@@ -14,10 +14,16 @@ from stepmix.stepmix import bootstrap
 ##### Gap statistic #####
 
 def bootstrap_gap(data, controls, n, model, params, iter_num):
-    # Create a random dataset
+    # Create a random dataset. StepMix's categorical measurement integer-casts
+    # floats, so the categorical-latent null draws on [min, max + 1) to floor
+    # to uniform integer categories including the top one. Everything else
+    # (distance models, continuous latent) runs on continuous data, where that
+    # +1 would inflate the reference box a full unit above the observed range.
+    categorical = model == 'latent' and 'categorical' in params.get('msrt', '')
+    high = data.max(axis=0) + 1 if categorical else data.max(axis=0)
     rand_data = np.random.uniform(
         low=data.min(axis=0),
-        high=data.max(axis=0) + 1,
+        high=high,
         size=data.shape)
     rand_data = pd.DataFrame(rand_data, columns=data.columns)
     
@@ -38,6 +44,14 @@ def bootstrap_gap(data, controls, n, model, params, iter_num):
     res['bootstrap_iter'] = iter_num + 1
     
     return res
+
+
+# Indices where a LOWER score means better clustering. They keep Tibshirani's
+# original orientation (gap = log(rand) - log(model), like within-dispersion);
+# higher-is-better indices are flipped so that, for every index, a larger gap
+# uniformly means "more structure than the uniform null" and get_gap's
+# selection rule has the same semantics across indices.
+LOWER_IS_BETTER = {'davies_bouldin'}
 
 
 def compute_gap(bootstrap_results, model_results, model, params, indices):
@@ -69,8 +83,12 @@ def compute_gap(bootstrap_results, model_results, model, params, indices):
                 rand_ind = (rand_ind + 1) / 2
                 mod_ind = (mod_ind + 1) / 2
             
-            # Calculate gap statistic and s value
-            gap = np.log(np.mean(rand_ind)) - np.log(mod_ind)
+            # Calculate gap statistic and s value, oriented per index so a
+            # larger gap always means more structure than the null
+            if index in LOWER_IS_BETTER:
+                gap = np.log(np.mean(rand_ind)) - np.log(mod_ind)
+            else:
+                gap = np.log(mod_ind) - np.log(np.mean(rand_ind))
             s = np.std(np.log(rand_ind)) * np.sqrt(1 + (1 / len(group)))
             
             # Add to row data
