@@ -19,7 +19,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
-from matplotlib.ticker import MaxNLocator
+from matplotlib.ticker import MultipleLocator
 
 # Validated categorical palette (dataviz reference, light mode) — fixed order.
 SERIES = {
@@ -34,6 +34,10 @@ INK_2 = "#52514e"
 MUTED = "#898781"
 GRID = "#e1e0d9"
 AXIS = "#c3c2b7"
+
+# Fixed y scale so one extreme run cannot distort the whole grid; values
+# above Y_MAX are clipped at the axis edge.
+Y_MAX = 20
 
 POOLS = [("distance", "Best distance-based solution"), ("LCA", "Best LCA solution")]
 SWEEPS = [
@@ -52,13 +56,13 @@ def draw_panel(ax, sub, xcol, reverse_x):
             continue
         mean = s.groupby(xcol)["n_clust_effective"].mean().sort_index()
         ax.plot(
-            mean.index, mean.values,
+            mean.index, mean.values.clip(max=Y_MAX),
             color=color, lw=2, solid_capstyle="round", solid_joinstyle="round",
-            marker="o", ms=8, mec=SURFACE, mew=2, label=label, clip_on=False,
+            marker="o", ms=8, mec=SURFACE, mew=2, label=label,
         )
         if multi_seed:
             ax.scatter(
-                s[xcol], s["n_clust_effective"],
+                s[xcol], s["n_clust_effective"].clip(upper=Y_MAX),
                 color=color, s=14, alpha=0.35, linewidths=0, zorder=1,
             )
 
@@ -66,8 +70,8 @@ def draw_panel(ax, sub, xcol, reverse_x):
     if reverse_x:
         ax.invert_xaxis()
 
-    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-    ax.set_ylim(bottom=0)
+    ax.yaxis.set_major_locator(MultipleLocator(1))
+    ax.set_ylim(0, Y_MAX)
     ax.grid(axis="y", color=GRID, lw=1)
     ax.set_axisbelow(True)
     for side in ("top", "right"):
