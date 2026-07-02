@@ -99,6 +99,10 @@ def get_metrics(model, params, n, data, pred_clust, **additional_metrics):
         'model': model,
         'params': params,
         'n_clust': n,
+        # Keep the scored partition itself: k-means and StepMix fits are
+        # unseeded, so a later re-fit may land on a different local optimum
+        # than the one these CVIs were computed on.
+        'pred_clust': np.asarray(pred_clust),
         'min_clust_size': clust_size(pred_clust)[0],
         'max_clust_size': clust_size(pred_clust)[1],
         'silhouette': float(sil_score(data, pred_clust)),
