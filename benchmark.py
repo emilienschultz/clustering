@@ -171,12 +171,21 @@ def solution_labels(df, all_models, row, pipe_cfg):
     return np.asarray(hit.iloc[0]["pred_clust"])
 
 
-def summarize_run(df, y_true, result, pipe_cfg):
-    """Best distance / best LCA solution per validity index, with the
-    singleton-excluded cluster count and ARI against the true classes.
+# Bump when the summary schema or logic changes: cached payloads carry their
+# version, and stale summaries are recomputed from the stored labels (cheap —
+# no refit) instead of being silently reused.
+SUMMARY_VERSION = 2
 
-    Labels come from the scored fit itself (see `solution_labels`), so the
-    counts and ARI describe exactly the partition behind each recorded score.
+
+def summarize_run(df, y_true, result, pipe_cfg):
+    """One row per (validity index, algorithm), so models can be compared.
+
+    The distance pool from `selected_pools` is already deduplicated to each
+    algorithm's best gap-selected configuration (k-means / AHC / HDBSCAN),
+    ranked best-first: rank 0 within the pool is the old "best solution". The
+    LCA pool contributes its single best latent row. Labels come from the
+    scored fit itself (see `solution_labels`), so counts and ARI describe
+    exactly the partition behind each recorded score.
     """
     all_models = result["all_models"]
     dist_by_index, lca_by_index = selected_pools(all_models, result["candidate_models"])
@@ -185,30 +194,47 @@ def summarize_run(df, y_true, result, pipe_cfg):
     for col, label, _ in INDEX_SPEC:
         for pool_name, pool in [("distance", dist_by_index), ("LCA", lca_by_index)]:
             top = pool[col]
+            if pool_name == "LCA":
+                top = top.head(1)
             if len(top) == 0:
                 rows.append(
-                    dict(index=col, index_label=label, pool=pool_name, model=None)
+                    dict(index=col, index_label=label, pool=pool_name,
+                         rank=0, model=None)
                 )
                 continue
-            r = top.iloc[0]
-            labels_pred = solution_labels(df, all_models, r, pipe_cfg)
-            n_eff, n_singleton = effective_n_clusters(labels_pred)
-            rows.append(
-                dict(
-                    index=col,
-                    index_label=label,
-                    pool=pool_name,
-                    model=r["model"],
-                    params=str(r["params"]),
-                    n_clust=int(r["n_clust"]),
-                    n_clust_effective=n_eff,
-                    n_singleton=n_singleton,
-                    n_noise=int((labels_pred == -1).sum()),
-                    score=float(r[col]),
-                    ari=float(adjusted_rand_score(y_true, labels_pred)),
+            for rank in range(len(top)):
+                r = top.iloc[rank]
+                labels_pred = solution_labels(df, all_models, r, pipe_cfg)
+                n_eff, n_singleton = effective_n_clusters(labels_pred)
+                rows.append(
+                    dict(
+                        index=col,
+                        index_label=label,
+                        pool=pool_name,
+                        rank=rank,
+                        model=r["model"],
+                        params=str(r["params"]),
+                        n_clust=int(r["n_clust"]),
+                        n_clust_effective=n_eff,
+                        n_singleton=n_singleton,
+                        n_noise=int((labels_pred == -1).sum()),
+                        score=float(r[col]),
+                        ari=float(adjusted_rand_score(y_true, labels_pred)),
+                    )
                 )
-            )
     return rows
+
+
+def ensure_summary(payload, path):
+    """Recompute and persist the payload's summary if its version is stale."""
+    if payload.get("summary_version") != SUMMARY_VERSION:
+        payload["summary"] = summarize_run(
+            payload["df"], payload["y_true"], payload["result"], payload["pipe_cfg"]
+        )
+        payload["summary_version"] = SUMMARY_VERSION
+        with open(path, "wb") as fh:
+            pickle.dump(payload, fh)
+    return payload
 
 
 # --------------------------- run / cache ---------------------------
@@ -223,12 +249,7 @@ def run_scenario(scn, pipe_cfg, out_dir, n_jobs):
     if path.exists():
         with open(path, "rb") as fh:
             payload = pickle.load(fh)
-        if "summary" not in payload:  # older cache: fill in and re-save
-            payload["summary"] = summarize_run(
-                payload["df"], payload["y_true"], payload["result"], pipe_cfg
-            )
-            with open(path, "wb") as fh:
-                pickle.dump(payload, fh)
+        payload = ensure_summary(payload, path)
         print(f"[cached] {key}  {scn}")
         return payload
 
@@ -244,6 +265,7 @@ def run_scenario(scn, pipe_cfg, out_dir, n_jobs):
         y_true=y_true,
         result=result,
         summary=summarize_run(df, y_true, result, pipe_cfg),
+        summary_version=SUMMARY_VERSION,
         timestamp=time.time(),
     )
     with open(path, "wb") as fh:
@@ -268,6 +290,7 @@ def build_summary(scenarios, pipe_cfg, out_dir):
             continue
         with open(path, "rb") as fh:
             payload = pickle.load(fh)
+        payload = ensure_summary(payload, path)
         for row in payload["summary"]:
             rows.append(dict(scn, key=payload["key"], **row))
     if missing:
